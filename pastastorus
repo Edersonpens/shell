@@ -1,0 +1,82 @@
+Clear-Host
+
+Write-Host "=== CRIADOR DE ESTRUTURA PDVs TORUS ===" -ForegroundColor Cyan
+
+# Caminho base
+$caminhoBase = Read-Host "Informe o caminho onde deseja criar a estrutura"
+
+if (!(Test-Path $caminhoBase)) {
+    Write-Host "O caminho informado nao existe." -ForegroundColor Red
+    exit
+}
+
+# Pasta principal
+$pastaPrincipal = Join-Path $caminhoBase "PDVs Torus"
+New-Item -Path $pastaPrincipal -ItemType Directory -Force | Out-Null
+
+# Data do log
+$dataLog = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+
+# Desktop
+$desktop = [Environment]::GetFolderPath("Desktop")
+
+# Arquivo de log
+$arquivoLog = Join-Path $desktop "Estrutura_PDVs_Torus_$dataLog.txt"
+
+$log = @()
+$log += "=========================================="
+$log += "ESTRUTURA PDVs TORUS"
+$log += "Data/Hora: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
+$log += "=========================================="
+$log += ""
+$log += $pastaPrincipal
+
+# Quantidade de lojas
+$qtdLojas = [int](Read-Host "Quantas lojas existem")
+
+for ($loja = 1; $loja -le $qtdLojas; $loja++) {
+
+    if ($loja -eq 1) {
+        $nomeLoja = "Matriz"
+    }
+    else {
+        $numeroFilial = ($loja - 1).ToString("00")
+        $nomeLoja = "Filial $numeroFilial"
+    }
+
+    $pastaLoja = Join-Path $pastaPrincipal $nomeLoja
+    New-Item -Path $pastaLoja -ItemType Directory -Force | Out-Null
+
+    $log += "|-- $nomeLoja"
+
+    Write-Host ""
+    Write-Host "Configurando $nomeLoja" -ForegroundColor Yellow
+
+    $qtdPDVs = [int](Read-Host "Quantidade de PDVs")
+    $inicioPDV = [int](Read-Host "Numero inicial dos PDVs")
+
+    for ($i = 0; $i -lt $qtdPDVs; $i++) {
+
+        $numeroPDV = $inicioPDV + $i
+        $nomePDV = "PDV $($numeroPDV.ToString('00'))"
+
+        $pastaPDV = Join-Path $pastaLoja $nomePDV
+
+        New-Item -Path $pastaPDV -ItemType Directory -Force | Out-Null
+
+        $log += "|   |-- $nomePDV"
+    }
+}
+
+# Salva log
+$log | Out-File -FilePath $arquivoLog -Encoding UTF8
+
+Write-Host ""
+Write-Host "==========================================" -ForegroundColor Green
+Write-Host "Processo concluido com sucesso!" -ForegroundColor Green
+Write-Host "Estrutura criada em:" -ForegroundColor Green
+Write-Host $pastaPrincipal -ForegroundColor White
+Write-Host ""
+Write-Host "Log salvo em:" -ForegroundColor Cyan
+Write-Host $arquivoLog -ForegroundColor White
+Write-Host "==========================================" -ForegroundColor Green
