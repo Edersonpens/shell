@@ -1,82 +1,153 @@
+# ==========================================
+# CRIADOR DE ESTRUTURA PDVs TORUS - Versão Compacta
+# ==========================================
+
 Clear-Host
 
-Write-Host "=== CRIADOR DE ESTRUTURA PDVs TORUS ===" -ForegroundColor Cyan
+# ===================== FUNÇÕES =====================
+function Add-Log { param([string]$Texto) $script:LogResultado += $Texto }
 
-# Caminho base
-$caminhoBase = Read-Host "Informe o caminho onde deseja criar a estrutura"
-
-if (!(Test-Path $caminhoBase)) {
-    Write-Host "O caminho informado nao existe." -ForegroundColor Red
-    exit
+function Criar-Pasta {
+    param([string]$Caminho)
+    try {
+        if (-not (Test-Path $Caminho)) {
+            New-Item -Path $Caminho -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            $script:PastasCriadas++
+            Add-Log "[SUCESSO] $Caminho"
+            return $true
+        }
+        Add-Log "[INFO] Já existia: $Caminho"
+        return $true
+    }
+    catch {
+        $script:Falhas++
+        Add-Log "[FALHA] $Caminho"
+        Add-Log "   Motivo: $($_.Exception.Message)"
+        return $false
+    }
 }
 
-# Pasta principal
-$pastaPrincipal = Join-Path $caminhoBase "PDVs Torus"
-New-Item -Path $pastaPrincipal -ItemType Directory -Force | Out-Null
+function Montar-Arvore {
+    param([array]$Estrutura, [int]$QtdLojas)
+    $arvore = [System.Collections.Generic.List[string]]::new()
+    $arvore.Add("PDVs Torus")
 
-# Data do log
-$dataLog = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    if ($QtdLojas -eq 1) {
+        for ($p = 0; $p -lt $Estrutura[0].PDVs.Count; $p++) {
+            $arvore.Add( "$(if($p -eq $Estrutura[0].PDVs.Count-1){"└── "}else{"├── "})$($Estrutura[0].PDVs[$p])" )
+        }
+    } else {
+        for ($i = 0; $i -lt $Estrutura.Count; $i++) {
+            $loja = $Estrutura[$i]
+            $isLast = ($i -eq $Estrutura.Count-1)
+            $arvore.Add( "$(if($isLast){"└── "}else{"├── "})$($loja.Nome)" )
 
-# Desktop
-$desktop = [Environment]::GetFolderPath("Desktop")
-
-# Arquivo de log
-$arquivoLog = Join-Path $desktop "Estrutura_PDVs_Torus_$dataLog.txt"
-
-$log = @()
-$log += "=========================================="
-$log += "ESTRUTURA PDVs TORUS"
-$log += "Data/Hora: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
-$log += "=========================================="
-$log += ""
-$log += $pastaPrincipal
-
-# Quantidade de lojas
-$qtdLojas = [int](Read-Host "Quantas lojas existem")
-
-for ($loja = 1; $loja -le $qtdLojas; $loja++) {
-
-    if ($loja -eq 1) {
-        $nomeLoja = "Matriz"
+            $sub = if($isLast){"    "}else{"│   "}
+            for ($p = 0; $p -lt $loja.PDVs.Count; $p++) {
+                $isLastPDV = ($p -eq $loja.PDVs.Count-1)
+                $arvore.Add("$sub$(if($isLastPDV){"└── "}else{"├── "})$($loja.PDVs[$p])")
+            }
+            if (-not $isLast) { $arvore.Add("│") }
+        }
     }
-    else {
-        $numeroFilial = ($loja - 1).ToString("00")
-        $nomeLoja = "Filial $numeroFilial"
-    }
+    return $arvore
+}
 
-    $pastaLoja = Join-Path $pastaPrincipal $nomeLoja
-    New-Item -Path $pastaLoja -ItemType Directory -Force | Out-Null
-
-    $log += "|-- $nomeLoja"
-
+# ===================== LOOP DE COLETA =====================
+$continuar = $true
+while ($continuar) {
+    Clear-Host
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host "   CRIADOR DE ESTRUTURA PDVs TORUS" -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Configurando $nomeLoja" -ForegroundColor Yellow
 
-    $qtdPDVs = [int](Read-Host "Quantidade de PDVs")
-    $inicioPDV = [int](Read-Host "Numero inicial dos PDVs")
+    do { $caminhoBase = Read-Host "Informe o caminho base" }
+    while (-not (Test-Path $caminhoBase))
 
-    for ($i = 0; $i -lt $qtdPDVs; $i++) {
+    do {
+        $qtdLojas = [int](Read-Host "Quantidade de lojas")
+    } while ($qtdLojas -lt 1)
 
-        $numeroPDV = $inicioPDV + $i
-        $nomePDV = "PDV $($numeroPDV.ToString('00'))"
+    $estrutura = @()
+    for ($l = 1; $l -le $qtdLojas; $l++) {
+        $nomeLoja = if ($l -eq 1) { "Matriz" } else { "Filial $(($l-1).ToString('00'))" }
+        Write-Host "`nConfigurando $nomeLoja" -ForegroundColor Yellow
 
-        $pastaPDV = Join-Path $pastaLoja $nomePDV
+        do { $qtdPDVs = [int](Read-Host "   Quantidade de PDVs") } while ($qtdPDVs -lt 1)
+        do { $inicioPDV = [int](Read-Host "   Número inicial dos PDVs") } while ($inicioPDV -lt 0)
 
-        New-Item -Path $pastaPDV -ItemType Directory -Force | Out-Null
+        $pdvs = 0..($qtdPDVs-1) | ForEach-Object { "PDV $(($inicioPDV + $_).ToString('00'))" }
 
-        $log += "|   |-- $nomePDV"
+        $estrutura += [PSCustomObject]@{ Nome = $nomeLoja; PDVs = $pdvs }
+    }
+
+    $preview = Montar-Arvore -Estrutura $estrutura -QtdLojas $qtdLojas
+
+    Clear-Host
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host "   PRÉ-VISUALIZAÇÃO DA ESTRUTURA" -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+    $preview | ForEach-Object { Write-Host $_ }
+    Write-Host ""
+
+    $opcao = Read-Host "1 - Corrigir  |  2 - Confirmar"
+    if ($opcao -eq "2") { $continuar = $false }
+}
+
+# ===================== CRIAÇÃO =====================
+$PastasCriadas = 0
+$Falhas = 0
+$LogResultado = @()
+
+$pastaPrincipal = Join-Path $caminhoBase "PDVs Torus"
+Criar-Pasta $pastaPrincipal | Out-Null
+
+if ($qtdLojas -eq 1) {
+    $estrutura[0].PDVs | ForEach-Object { Criar-Pasta (Join-Path $pastaPrincipal $_) | Out-Null }
+} else {
+    foreach ($loja in $estrutura) {
+        $pastaLoja = Join-Path $pastaPrincipal $loja.Nome
+        Criar-Pasta $pastaLoja | Out-Null
+        $loja.PDVs | ForEach-Object { Criar-Pasta (Join-Path $pastaLoja $_) | Out-Null }
     }
 }
 
-# Salva log
+# ===================== LOG =====================
+$dataLog = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$arquivoLog = Join-Path ([Environment]::GetFolderPath("Desktop")) "Estrutura_PDVs_Torus_$dataLog.txt"
+
+$log = @(
+    "=========================================="
+    "ESTRUTURA PDVs TORUS"
+    "Data/Hora: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
+    "=========================================="
+    ""
+) + $preview + @(
+    ""
+    "=========================================="
+    "RESULTADO DA EXECUÇÃO"
+    "=========================================="
+    ""
+) + $LogResultado + @(
+    ""
+    "=========================================="
+    "RESUMO"
+    "=========================================="
+    "Pastas criadas: $PastasCriadas"
+    "Falhas: $Falhas"
+    "Status: $(if($Falhas -eq 0){"SUCESSO TOTAL"}else{"EXECUTADO COM FALHAS"})"
+)
+
 $log | Out-File -FilePath $arquivoLog -Encoding UTF8
 
-Write-Host ""
+# ===================== FINAL =====================
+Write-Host "`n==========================================" -ForegroundColor Green
+Write-Host "   Processo concluído $(if($Falhas -eq 0){"com sucesso!"}else{"com falhas!"})" -ForegroundColor $(if($Falhas -eq 0){"Green"}else{"Yellow"})
+Write-Host "Pastas criadas : $PastasCriadas" -ForegroundColor Green
+Write-Host "Falhas         : $Falhas" -ForegroundColor $(if($Falhas -eq 0){"Green"}else{"Yellow"})
+Write-Host "`nEstrutura: $pastaPrincipal" -ForegroundColor Cyan
+Write-Host "Log: $arquivoLog" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Green
-Write-Host "Processo concluido com sucesso!" -ForegroundColor Green
-Write-Host "Estrutura criada em:" -ForegroundColor Green
-Write-Host $pastaPrincipal -ForegroundColor White
-Write-Host ""
-Write-Host "Log salvo em:" -ForegroundColor Cyan
-Write-Host $arquivoLog -ForegroundColor White
-Write-Host "==========================================" -ForegroundColor Green
+
+Read-Host "`nPressione ENTER para finalizar"
