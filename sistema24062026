@@ -1,0 +1,232 @@
+<#
+.SYNOPSIS
+    Menu Avançado de Manutenção do Windows
+#>
+
+[CmdletBinding()]
+param()
+
+# ==================== AUTO ELEVATE TO ADMIN ====================
+function Test-Admin {
+    $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    return $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if (-not (Test-Admin)) {
+    Write-Host "Reiniciando como Administrador..." -ForegroundColor Yellow
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+# ==================== CONFIGURAÇÕES ====================
+$Host.UI.RawUI.WindowTitle = "Menu Manutenção Avançada - Iniciando..."
+$Desktop = [Environment]::GetFolderPath("Desktop")
+$Timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$LogFile = "$Desktop\MenuManutencao_$Timestamp.txt"
+
+$Stats = @{
+    ToolsOpened = 0
+    Cleanings = 0
+    SpaceFreedMB = 0
+    StartTime = Get-Date
+}
+
+# ==================== FUNÇÃO DE LOG ====================
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $LogEntry = "[$Time] [$Level] $Message"
+    Add-Content -Path $LogFile -Value $LogEntry -Encoding UTF8 -ErrorAction SilentlyContinue
+    
+    # Só exibe no console se NÃO for o caso específico do Wi-Fi sem adaptador
+    if (-not ($Message -like "*Wi-Fi encontrado ou ativo*")) {
+        switch ($Level) {
+            "SUCCESS" { Write-Host "✓ $Message" -ForegroundColor Green }
+            "WARNING" { Write-Host "! $Message" -ForegroundColor Yellow }
+            "ERROR"   { Write-Host "✗ $Message" -ForegroundColor Red }
+            default   { Write-Host "→ $Message" -ForegroundColor White }
+        }
+    }
+}
+
+# ==================== INFORMAÇÕES DO SISTEMA ====================
+function Show-SystemInfo {
+    Write-Log "=== INFORMAÇÕES DO SISTEMA ===" "INFO"
+    
+    $Computer = $env:COMPUTERNAME
+    $User = $env:USERNAME
+    $WinVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ProductName + " " + 
+                  (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").DisplayVersion
+    $RAM = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+    
+    $Disk = Get-PhysicalDisk | Where-Object { $_.BusType -ne $null } | Select-Object -First 1
+    $DiskType = if ($Disk.MediaType -eq "SSD") { "SSD" } elseif ($Disk.MediaType -eq "HDD") { "HDD" } else { "Desconhecido" }
+    
+    $Drive = Get-PSDrive C
+    $FreeGB = [math]::Round($Drive.Free / 1GB, 2)
+    $TotalGB = [math]::Round($Drive.Used / 1GB + $FreeGB, 2)
+    
+    $Info = @"
+Computador      : $Computer
+Usuário         : $User
+Sistema         : $WinVersion
+Memória RAM     : $RAM GB
+Tipo de Disco   : $DiskType
+Disco C:        : $FreeGB GB livres de $TotalGB GB
+"@
+    Write-Log $Info
+}
+
+function Write-MenuHeader {
+    Clear-Host
+    $Host.UI.RawUI.WindowTitle = "Menu Manutenção Avançada - Aguardando escolha..."
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host "   MENU MANUTENÇÃO AVANÇADA           " -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host ""
+}
+
+function Show-Menu {
+    Write-MenuHeader
+    Write-Host "  1  -  Adaptadores de Rede"
+    Write-Host "  2  -  Gerenciador de Disco"
+    Write-Host "  3  -  Gerenciador de Dispositivos"
+    Write-Host "  4  -  Limpeza de Temporários"
+    Write-Host "  5  -  Propriedades do Sistema"
+    Write-Host "  6  -  Relatório de Estabilidade"
+    Write-Host "  7  -  Sobre o Windows"
+    Write-Host "  8  -  Verificar Ativação"
+    Write-Host "  9  -  Gerenciador de Computador"
+    Write-Host " 10  -  Monitor de Recursos"
+    Write-Host " 11  -  Informações do Sistema"
+    Write-Host " 12  -  Diagnóstico de Memória (RAM)"
+    Write-Host " 13  -  Relatório Detalhado Wi-Fi"
+    Write-Host ""
+    Write-Host "  0 ou S - Sair" -ForegroundColor Red
+    Write-Host "======================================" -ForegroundColor Cyan
+}
+
+function Test-WiFi {
+    $wifiAdapter = Get-NetAdapter | Where-Object { 
+        ($_.InterfaceDescription -like "*Wi-Fi*" -or $_.Name -like "*Wi-Fi*" -or $_.InterfaceType -eq 71) -and 
+        $_.Status -ne "Disconnected"
+    }
+    return $wifiAdapter -ne $null
+}
+
+function Start-Tool {
+    param([string]$FileName, [string]$Arguments = "")
+    $Host.UI.RawUI.WindowTitle = "Abrindo $FileName..."
+    try {
+        if ($Arguments) {
+            Start-Process -FilePath $FileName -ArgumentList $Arguments
+        } else {
+            Start-Process -FilePath $FileName
+        }
+        $global:Stats.ToolsOpened++
+        Write-Log "Ferramenta aberta: $FileName $Arguments" "INFO"
+    }
+    catch {
+        Write-Log "Erro ao abrir $FileName" "ERROR"
+    }
+}
+
+function Clear-TempFiles {
+    $Host.UI.RawUI.WindowTitle = "Menu Manutenção - Realizando Limpeza..."
+    
+    Write-Host "`n=== LIMPEZA DE TEMPORÁRIOS ===" -ForegroundColor Yellow
+    Write-Host "Esta operação vai apagar apenas arquivos temporários." -ForegroundColor White
+    Write-Host "Não remove seus documentos, fotos ou programas.`n" -ForegroundColor Gray
+    
+    $confirm = Read-Host "Deseja continuar com a limpeza? (S/N)"
+    if ($confirm -notmatch '^[sS]$') {
+        Write-Log "Limpeza cancelada pelo usuário" "WARNING"
+        return
+    }
+
+    $beforeFree = (Get-PSDrive C).Free
+    Write-Log "Iniciando limpeza..." "INFO"
+    
+    $folders = @("$env:TEMP", "$env:TMP", "C:\Windows\Temp", "$env:LOCALAPPDATA\Temp")
+    
+    foreach ($folder in $folders) {
+        if (Test-Path $folder) {
+            try {
+                Get-ChildItem -Path $folder -Recurse -Force -ErrorAction SilentlyContinue | 
+                Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    }
+
+    $afterFree = (Get-PSDrive C).Free
+    $freedMB = [math]::Round(($afterFree - $beforeFree) / 1MB, 2)
+    
+    $global:Stats.Cleanings++
+    $global:Stats.SpaceFreedMB += $freedMB
+    
+    Write-Log "Limpeza finalizada! Espaço liberado: $freedMB MB" "SUCCESS"
+    Start-Sleep -Seconds 2
+}
+
+function Show-FinalReport {
+    $EndTime = Get-Date
+    $Duration = $EndTime - $Stats.StartTime
+    
+    Write-Host "`n" + "="*60 -ForegroundColor Cyan
+    Write-Host "                    RELATÓRIO FINAL" -ForegroundColor Cyan
+    Write-Host "="*60 -ForegroundColor Cyan
+    Write-Host "Tempo de uso               : $($Duration.ToString('hh\:mm\:ss'))"
+    Write-Host "Ferramentas abertas        : $($Stats.ToolsOpened)"
+    Write-Host "Limpezas realizadas        : $($Stats.Cleanings)"
+    Write-Host "Espaço total liberado      : $($Stats.SpaceFreedMB) MB"
+    Write-Host "Log salvo em               : $LogFile"
+    Write-Host "="*60 -ForegroundColor Cyan
+}
+
+# ==================== INICIALIZAÇÃO ====================
+Write-Log "=== Script iniciado como Administrador ===" "SUCCESS"
+Show-SystemInfo
+
+# ==================== LOOP PRINCIPAL ====================
+do {
+    Show-Menu
+    $choice = Read-Host "`nDigite o número da opção desejada"
+
+    switch ($choice) {
+        "1" { Start-Tool "ncpa.cpl" }
+        "2" { Start-Tool "diskmgmt.msc" }
+        "3" { Start-Tool "devmgmt.msc" }
+        "4" { Clear-TempFiles }
+        "5" { Start-Tool "sysdm.cpl" }
+        "6" { Start-Tool "perfmon" "/rel" }
+        "7" { Start-Tool "ms-settings:about" }
+        "8" { Start-Tool "slmgr" "/xpr" }
+        "9" { Start-Tool "compmgmt.msc" }
+        "10" { Start-Tool "resmon" }
+        "11" { Start-Tool "msinfo32" }
+        "12" { Start-Tool "mdsched" }
+        "13" { 
+            Write-Log "Verificando adaptador Wi-Fi..." "INFO"
+            if (Test-WiFi) {
+                Write-Host "`nAdaptador Wi-Fi detectado. Gerando relatório..." -ForegroundColor Green
+                Write-Log "Gerando relatório Wi-Fi..." "SUCCESS"
+                Start-Process powershell -ArgumentList "netsh wlan show wlanreport; Start-Process `"$env:ProgramData\Microsoft\Windows\WlanReport\wlan-report-latest.html`"" -Verb RunAs 
+            } else {
+                Write-Host "`n❌ Nenhum adaptador Wi-Fi encontrado ou ativo." -ForegroundColor Red
+                Write-Log "Nenhum adaptador Wi-Fi encontrado ou ativo" "WARNING"
+                Start-Sleep -Seconds 4
+            }
+        }
+        {"0","S","s"} {
+            Write-Log "Script finalizado pelo usuário" "INFO"
+            Show-FinalReport
+            break
+        }
+        default {
+            Write-Host "`nOpção inválida! Tente novamente." -ForegroundColor Red
+            Start-Sleep -Seconds 1.5
+        }
+    }
+} while ($choice -notin "0","S","s")
+
+Write-Log "=== Script encerrado ===" "INFO"
