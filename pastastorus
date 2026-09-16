@@ -30,7 +30,7 @@ function Criar-Pasta {
 function Montar-Arvore {
     param([array]$Estrutura, [int]$QtdLojas)
     $arvore = [System.Collections.Generic.List[string]]::new()
-    $arvore.Add("PDVs Torus")
+    $arvore.Add("PDVsTORUS") # <--- ALTERAÇÃO AQUI
 
     if ($QtdLojas -eq 1) {
         for ($p = 0; $p -lt $Estrutura[0].PDVs.Count; $p++) {
@@ -77,7 +77,7 @@ while ($continuar) {
         do { $qtdPDVs = [int](Read-Host "   Quantidade de PDVs") } while ($qtdPDVs -lt 1)
         do { $inicioPDV = [int](Read-Host "   Número inicial dos PDVs") } while ($inicioPDV -lt 0)
 
-        # AQUI FOI FEITA A ALTERAÇÃO: Removido o espaço após "PDV"
+        # PDVs sem espaço (ex: PDV01)
         $pdvs = 0..($qtdPDVs-1) | ForEach-Object { "PDV$(($inicioPDV + $_).ToString('00'))" }
 
         $estrutura += [PSCustomObject]@{ Nome = $nomeLoja; PDVs = $pdvs }
@@ -101,7 +101,7 @@ $PastasCriadas = 0
 $Falhas = 0
 $LogResultado = @()
 
-$pastaPrincipal = Join-Path $caminhoBase "PDVs Torus"
+$pastaPrincipal = Join-Path $caminhoBase "PDVsTORUS" # <--- ALTERAÇÃO AQUI
 Criar-Pasta $pastaPrincipal | Out-Null
 
 if ($qtdLojas -eq 1) {
