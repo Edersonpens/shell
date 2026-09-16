@@ -77,7 +77,8 @@ while ($continuar) {
         do { $qtdPDVs = [int](Read-Host "   Quantidade de PDVs") } while ($qtdPDVs -lt 1)
         do { $inicioPDV = [int](Read-Host "   Número inicial dos PDVs") } while ($inicioPDV -lt 0)
 
-        $pdvs = 0..($qtdPDVs-1) | ForEach-Object { "PDV $(($inicioPDV + $_).ToString('00'))" }
+        # AQUI FOI FEITA A ALTERAÇÃO: Removido o espaço após "PDV"
+        $pdvs = 0..($qtdPDVs-1) | ForEach-Object { "PDV$(($inicioPDV + $_).ToString('00'))" }
 
         $estrutura += [PSCustomObject]@{ Nome = $nomeLoja; PDVs = $pdvs }
     }
